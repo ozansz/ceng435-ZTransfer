@@ -2,6 +2,7 @@ import io
 import os
 import sys
 import socket
+import logging
 import hashlib
 
 PACKAGE_PARENT = '..'
@@ -25,12 +26,15 @@ class ZTransferTCPClient(object):
     STATE_FIN = 3
 
     def __init__(self, server_host: str, server_port: int, file_name: str, file_stream: io.BytesIO):
+        self.server_host = server_host
+        self.server_port = server_port
         self.file_name = file_name
         self.file_stream = file_stream
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         self.logger = get_logger("ZTransferTCPClient")
-        self.logger.debug(f"Constructed ZTransferTCPClient({self.server_host}, {self.server_port}, ...)")
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.debug(f"Constructed ZTransferTCPClient({server_host}, {server_port}, ...)")
 
     def initiate_transfer(self):
         file_size_bytes = self.file_stream.getbuffer().nbytes
@@ -50,7 +54,7 @@ class ZTransferTCPClient(object):
         is_last_transfer_packet = False
 
         self.logger.debug(f"File size: {file_size_bytes} bytes")
-        self.logger.debug(f"File checksum (SHA3-512): {file_checksum.decode()}")
+        self.logger.debug(f"File checksum (SHA3-512): {file_checksum[:10]}...")
         self.logger.debug(f"Total {num_data_packets} data packets will be sent")
 
         while state != self.STATE_FIN:
@@ -59,8 +63,8 @@ class ZTransferTCPClient(object):
             if state == self.STATE_INIT:
                 self.logger.debug(f"State: INIT")
                 
-                self.socket.connect((server_host, server_port))
-                self.logger.debug(f"Connected to server at {(server_host, server_port)}")
+                self.socket.connect((self.server_host, self.server_port))
+                self.logger.debug(f"Connected to server at {(self.server_host, self.server_port)}")
 
                 creq_packet = ZTConnReqPacket(current_sequence_num, file_size_bytes,
                     num_data_packets + 1, file_checksum, self.file_name)
@@ -142,8 +146,9 @@ class ZTransferTCPClient(object):
             current_sequence_num += 1
 
         self.logger.debug(f"State: FIN")
+        self.logger.debug(f"Current sequence number: {current_sequence_num}")
 
-        fin_packet = ZTFinishPacket(sequence_number)
+        fin_packet = ZTFinishPacket(current_sequence_num)
         self.socket.sendall(fin_packet.serialize())
 
         self.clear()
