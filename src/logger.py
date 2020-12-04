@@ -1,14 +1,15 @@
+import sys
 import logging
 
 def get_logger(name):
     logger = logging.getLogger(name)
-    #logger.propagate = False
+    logger.propagate = True
     formatter = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(user)s - %(req_id)s"
-        " - %(external_ctx)s - %(end_user)s - %(message)s")
+        "%(asctime)s - %(levelname)s - %(message)s")
 
-    ch = logging.StreamHandler()
+    ch = logging.StreamHandler(sys.stdout)
     ch.setFormatter(formatter)
+    ch.setLevel(logging.DEBUG)
     logger.addHandler(ch) 
 
     return logger
