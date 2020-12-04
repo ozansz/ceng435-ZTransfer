@@ -111,7 +111,7 @@ class ZTAcknowledgementPacket(ZTPacket):
         seq_to_ack = unpack(
             ZTACK_SER,
             raw_data[:4]
-        )
+        )[0]
 
         return cls(sequence_number, seq_to_ack, timestamp=timestamp, version=version)
 
