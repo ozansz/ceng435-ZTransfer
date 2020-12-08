@@ -123,7 +123,7 @@ class ZTDataPacket(ZTPacket):
 
         self.file_data = data
 
-        crc_checksum = zlib.crc32(data) & 0xffffffff
+        crc_checksum = zlib.crc32(pack("!984s", data)) & 0xffffffff
         
         raw_data = pack(
             ZTDATA_SER,
@@ -144,7 +144,10 @@ class ZTDataPacket(ZTPacket):
 
         if pkg_data_checksum != crc_checksum:
             raise ZTVerificationError(ERR_ZTDATA_CHECKSUM, extras={
-                "checksum": pkg_data_checksum
+                "checksum": pkg_data_checksum,
+                "seq": sequence_number,
+                "ts": timestamp,
+                "version": version
             })
 
         return cls(sequence_number, pkg_data, timestamp=timestamp, version=version)
