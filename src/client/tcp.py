@@ -25,7 +25,7 @@ class ZTransferTCPClient(object):
     STATE_TRANSFER = 2
     STATE_FIN = 3
 
-    def __init__(self, server_host: str, server_port: int, file_name: str, file_stream: io.BytesIO):
+    def __init__(self, server_host: str, server_port: int, file_name: str, file_stream: io.BytesIO, logger_verbose: bool = False):
         self.server_host = server_host
         self.server_port = server_port
         self.file_name = file_name
@@ -33,14 +33,17 @@ class ZTransferTCPClient(object):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         self.logger = get_logger("ZTransferTCPClient")
-        self.logger.setLevel(logging.DEBUG)
+
+        if logger_verbose:
+            self.logger.setLevel(logging.DEBUG)
+        
         self.logger.debug(f"Constructed ZTransferTCPClient({server_host}, {server_port}, ...)")
 
     def initiate_transfer(self):
         file_size_bytes = self.file_stream.getbuffer().nbytes
-        num_data_packets = file_size_bytes // 988
+        num_data_packets = file_size_bytes // 984
 
-        if file_size_bytes % 988 > 0:
+        if file_size_bytes % 984 > 0:
             num_data_packets += 1
 
         m = hashlib.sha3_512()
@@ -101,10 +104,10 @@ class ZTransferTCPClient(object):
                         self.clear()
                         return
 
-                self.logger.debug(f"Packet OK: {packet.__class__.__name__}")
+                self.logger.debug(f"Packet OK: {packet.__class__.__name__} ({packet.sequence_number})")
 
                 if not isinstance(packet, ZTAcknowledgementPacket):
-                    self.logger.warning(f"Was waiting for ACK, got '{e.extras['ptype']}' (seq: {e.extras['seq']}, ts: {e.extras['ts']})")
+                    self.logger.warning(f"Was waiting for ACK, got '{packet.ptype}'")
                     self.clear()
                     return
 
@@ -119,12 +122,12 @@ class ZTransferTCPClient(object):
             elif state == self.STATE_TRANSFER:
                 self.logger.debug(f"State: TRANSFER")
 
-                if file_size_bytes - current_byte_position <  988:
+                if file_size_bytes - current_byte_position <  984:
                     file_bytes_to_send = self.file_stream.read()
                     is_last_transfer_packet = True
                 else:
-                    file_bytes_to_send = self.file_stream.read(988)
-                    current_byte_position += 988
+                    file_bytes_to_send = self.file_stream.read(984)
+                    current_byte_position += 984
 
                 self.logger.debug(f"Will send {len(file_bytes_to_send)} bytes of file data to server")
 
@@ -155,3 +158,6 @@ class ZTransferTCPClient(object):
 
     def clear(self):
         self.socket.close()
+
+cli = ZTransferTCPClient("0.0.0.0", 8085, "aaaaaaaa", io.BytesIO(b"aaabbbccc" * (1024 * 1024)))
+cli.initiate_transfer()
