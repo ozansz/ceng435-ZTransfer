@@ -25,9 +25,12 @@ class ZTransferTCPClient(object):
     STATE_TRANSFER = 2
     STATE_FIN = 3
 
-    def __init__(self, server_host: str, server_port: int, file_name: str, file_stream: io.BytesIO, logger_verbose: bool = False):
+    def __init__(self, server_host: str, server_port: int, port_pool: list, file_name: str, file_stream: io.BytesIO, logger_verbose: bool = False):
         self.server_host = server_host
         self.server_port = server_port
+        self.port_pool = port_pool
+        self.port_occupied = None
+
         self.file_name = file_name
         self.file_stream = file_stream
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -66,6 +69,21 @@ class ZTransferTCPClient(object):
             if state == self.STATE_INIT:
                 self.logger.debug(f"State: INIT")
                 
+                for port in self.port_pool:
+                    try:
+                        self.socket.bind(("0.0.0.0", port))
+                    except socket.error as e:
+                        if e.errno == errno.EADDRINUSE:
+                            continue
+                    else:
+                        self.port_occupied = port
+                        break
+
+                if self.port_occupied is None:
+                    self.logger.error(f"Could not bind to any ports from: {self.port_pool}")
+                    self.clear()
+                    return
+
                 self.socket.connect((self.server_host, self.server_port))
                 self.logger.debug(f"Connected to server at {(self.server_host, self.server_port)}")
 

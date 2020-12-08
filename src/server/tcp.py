@@ -1,5 +1,6 @@
 import os
 import sys
+import errno
 import socket
 import hashlib
 import logging
@@ -24,9 +25,10 @@ class ZTransferTCPServer(object):
     STATE_TRANSFER = 2
     STATE_FIN = 3
 
-    def __init__(self, bind_host: str, bind_port: int, logger_verbose: bool = False):
+    def __init__(self, bind_host: str, port_pool: list, logger_verbose: bool = False):
         self.bind_host = bind_host
-        self.bind_port = bind_port
+        self.port_pool = port_pool
+        self.port_occupied = None
         
         self.recv_bytes_data = b""
         self.file_overall_checksum = None
@@ -47,7 +49,21 @@ class ZTransferTCPServer(object):
 
         while state != self.STATE_FIN:
             if state == self.STATE_INIT:
-                self.socket.bind((self.bind_host, self.bind_port))
+                for port in self.port_pool:
+                    try:
+                        self.socket.bind((self.bind_host, port))
+                    except socket.error as e:
+                        if e.errno == errno.EADDRINUSE:
+                            continue
+                    else:
+                        self.port_occupied = port
+                        break
+
+                if self.port_occupied is None:
+                    self.logger.error(f"Could not bind to any ports from: {self.port_pool}")
+                    self.clear()
+                    return
+
                 self.socket.listen()
 
                 self.client_socket, client_addr = self.socket.accept()
