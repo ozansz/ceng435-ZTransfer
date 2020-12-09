@@ -1,15 +1,16 @@
 import io
 import os
+import pathlib
 
-from src.utils import get_parser, get_logger
 from src.client.tcp import ZTransferTCPClient
 from src.server.tcp import ZTransferTCPServer
+from src.utils import get_parser, get_logger, calc_sha3_512_checksum
 
 if __name__ == "__main__":
     parser = get_parser()
     args = parser.parse_args()
 
-    cli_logger = get_logger("cli", args.verbose)
+    cli_logger = get_logger("   command-line   ", args.verbose)
 
     if args.subparser_name == "client":
         cli_logger.debug("Reading file")
@@ -31,3 +32,20 @@ if __name__ == "__main__":
             args.verbose)
 
         server.listen_for_transfer()
+
+        checksum = calc_sha3_512_checksum(server.recv_bytes_data)
+
+        if checksum != server.file_overall_checksum:
+            cli_logger.debug(f"Checksum mismatch: \n{checksum}\n{server.file_overall_checksum}")
+        else:
+            cli_logger.debug(f"Checksum OK")
+
+        if args.save_path is None:
+            save_path = pathlib.Path(__file__).parent.absolute()
+        else:
+            save_path = args.save_path
+
+        save_path = os.path.join(save_path, server.file_name.replace("\x00", ""))
+
+        with open(save_path, "wb") as fp:
+            fp.write(server.recv_bytes_data)
