@@ -176,6 +176,3 @@ class ZTransferTCPClient(object):
 
     def clear(self):
         self.socket.close()
-
-cli = ZTransferTCPClient("0.0.0.0", 8085, "aaaaaaaa", io.BytesIO(b"aaabbbccc" * (1024 * 1024)))
-cli.initiate_transfer()
