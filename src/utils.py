@@ -1,4 +1,5 @@
 import sys
+import hashlib
 import logging
 import argparse
 
@@ -6,7 +7,7 @@ def get_logger(name: str, verbose: bool = False):
     logger = logging.getLogger(name)
     logger.propagate = True
     formatter = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(message)s")
+        "%(asctime)s | %(name)s | %(levelname)s: %(message)s")
 
     ch = logging.StreamHandler(sys.stdout)
     ch.setFormatter(formatter)
@@ -35,3 +36,9 @@ def get_parser():
     parser_client.add_argument("file_path")
 
     return parser
+
+def calc_sha3_512_checksum(data: bytes) -> bytes:
+    m = hashlib.sha3_512()
+    m.update(data)
+    
+    return m.digest()

@@ -3,7 +3,6 @@ import os
 import sys
 import socket
 import logging
-import hashlib
 
 PACKAGE_PARENT = '..'
 SCRIPT_DIR = os.path.dirname(
@@ -11,7 +10,7 @@ SCRIPT_DIR = os.path.dirname(
 sys.path.append(os.path.normpath(
     os.path.join(SCRIPT_DIR, PACKAGE_PARENT, PACKAGE_PARENT)))
 
-from src.utils import get_logger
+from src.utils import get_logger, calc_sha3_512_checksum
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
                                    ZTAcknowledgementPacket, ZTFinishPacket,
                                    deserialize_packet)
@@ -46,9 +45,7 @@ class ZTransferTCPClient(object):
         if file_size_bytes % 984 > 0:
             num_data_packets += 1
 
-        m = hashlib.sha3_512()
-        m.update(self.file_stream.getvalue())
-        file_checksum = m.digest()
+        file_checksum = calc_sha3_512_checksum(self.file_stream.getvalue())
 
         state = self.STATE_INIT
         current_sequence_num = 1
