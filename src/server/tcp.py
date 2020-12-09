@@ -11,7 +11,7 @@ SCRIPT_DIR = os.path.dirname(
 sys.path.append(os.path.normpath(
     os.path.join(SCRIPT_DIR, PACKAGE_PARENT, PACKAGE_PARENT)))
 
-from src.logger import get_logger
+from src.utils import get_logger
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
                                    ZTAcknowledgementPacket, ZTFinishPacket,
                                    deserialize_packet)
