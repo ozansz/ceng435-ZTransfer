@@ -2,7 +2,7 @@ import sys
 import logging
 import argparse
 
-def get_logger(name):
+def get_logger(name: str, verbose: bool = False):
     logger = logging.getLogger(name)
     logger.propagate = True
     formatter = logging.Formatter(
@@ -12,6 +12,9 @@ def get_logger(name):
     ch.setFormatter(formatter)
     ch.setLevel(logging.DEBUG)
     logger.addHandler(ch) 
+
+    if verbose:
+        logger.setLevel(logging.DEBUG)
 
     return logger
 

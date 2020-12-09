@@ -37,10 +37,7 @@ class ZTransferTCPServer(object):
         self.client_socket = None
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        self.logger = get_logger("ZTransferTCPServer")
-        
-        if logger_verbose:
-            self.logger.setLevel(logging.DEBUG)
+        self.logger = get_logger("ZTransferTCPServer", logger_verbose)
             
         self.logger.debug(f"Constructed ZTransferTCPServer({bind_host}, {bind_port})")
 

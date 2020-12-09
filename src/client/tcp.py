@@ -35,10 +35,7 @@ class ZTransferTCPClient(object):
         self.file_stream = file_stream
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        self.logger = get_logger("ZTransferTCPClient")
-
-        if logger_verbose:
-            self.logger.setLevel(logging.DEBUG)
+        self.logger = get_logger("ZTransferTCPClient", logger_verbose)
         
         self.logger.debug(f"Constructed ZTransferTCPClient({server_host}, {server_port}, ...)")
 
