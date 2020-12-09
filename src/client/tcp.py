@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import errno
 import socket
 import logging
 
