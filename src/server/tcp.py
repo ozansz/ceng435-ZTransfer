@@ -39,7 +39,7 @@ class ZTransferTCPServer(object):
 
         self.logger = get_logger("ZTransferTCPServer", logger_verbose)
             
-        self.logger.debug(f"Constructed ZTransferTCPServer({bind_host}, {bind_port})")
+        self.logger.debug(f"Constructed ZTransferTCPServer({bind_host}, {port_pool})")
 
     def listen_for_transfer(self):
         state = self.STATE_INIT
