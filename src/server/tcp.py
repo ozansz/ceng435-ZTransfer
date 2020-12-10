@@ -32,6 +32,8 @@ class ZTransferTCPServer(object):
         self.recv_bytes_data = b""
         self.file_overall_checksum = None
         self.file_name = None
+        self.last_data_packet_seq = None
+        self.last_data_packet_data_size = None
 
         self.client_socket = None
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -96,6 +98,8 @@ class ZTransferTCPServer(object):
 
                 self.file_name = packet.filename
                 self.file_overall_checksum = packet.checksum
+                self.last_data_packet_seq = packet.last_seq
+                self.last_data_packet_data_size = packet.data_size - (984 * (packet.last_seq - 1))
 
                 ack_packet = ZTAcknowledgementPacket(1, packet.sequence_number)
                 self.client_socket.sendall(ack_packet.serialize())
@@ -130,7 +134,10 @@ class ZTransferTCPServer(object):
                 self.logger.debug(f"Packet OK: {packet.__class__.__name__} ({packet.sequence_number})")
 
                 if isinstance(packet, ZTDataPacket):
-                    self.recv_bytes_data += packet.file_data.replace(b"\x00", b"")
+                    if packet.sequence_number ==  self.last_data_packet_seq:
+                        self.recv_bytes_data += packet.file_data[:self.last_data_packet_data_size]
+                    else:
+                        self.recv_bytes_data += packet.file_data
                 elif isinstance(packet, ZTFinishPacket):
                     state = self.STATE_FIN
                 else:
