@@ -22,16 +22,6 @@ ZTACK_TYPE = 2
 ZTFIN_TYPE = 3
 ZTRSND_TYPE = 4
 
-#pkg_data_checksum = zlib.crc32(pkg_data) & 0xffffffff
-#
-#        if pkg_data_checksum != crc_checksum:
-#            raise ZTVerificationError(ERR_ZTDATA_CHECKSUM, extras={
-#                "checksum": pkg_data_checksum,
-#                "seq": sequence_number,
-#                "ts": timestamp,
-#                "version": version
-#            })
-
 class ZTHeader(object):
     def __init__(self, packet_type: int, sequence_number: int, checksum: bytes = None, timestamp: int = None, version: int = ZT_VERSION):
         self.version = version
