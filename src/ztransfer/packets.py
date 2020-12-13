@@ -5,30 +5,48 @@ from datetime import datetime as dt
 from .errors import ERR_MAGIC_MISMATCH, ERR_VERSION_MISMATCH, ERR_PTYPE_DNE, ERR_ZTDATA_CHECKSUM, ZTVerificationError
 
 ZT_MAGIC = b"ZT"
-ZT_VERSION = 3 # v0.3
+ZT_VERSION = 4 # v0.4
 
-ZTHEADER_SER = "!2sBBII"
-ZTPACKET_SER = "!12s988s"
+ZTHEADER_SER = "!2sBBIII"
+ZTPACKET_SER = "!16s984s"
 ZTCONNREQ_SER = "!II64s255s"
 ZTACK_SER = "!I"
-ZTDATA_SER = "!I984s"
-ZTPACKET_DESERIALIZE_HEADER = "!2sBBII988s"
+ZTRSND_SER = "!I"
+ZTDATA_SER = "!984s"
+ZTPACKET_DESERIALIZE_HEADER = "!2sBBIII984s"
+ZTPACKET_CRC_SER = "!2sBBII984s"
 
 ZTCONNREQ_TYPE = 0
 ZTDATA_TYPE = 1
 ZTACK_TYPE = 2
 ZTFIN_TYPE = 3
+ZTRSND_TYPE = 4
+
+#pkg_data_checksum = zlib.crc32(pkg_data) & 0xffffffff
+#
+#        if pkg_data_checksum != crc_checksum:
+#            raise ZTVerificationError(ERR_ZTDATA_CHECKSUM, extras={
+#                "checksum": pkg_data_checksum,
+#                "seq": sequence_number,
+#                "ts": timestamp,
+#                "version": version
+#            })
 
 class ZTHeader(object):
-    def __init__(self, packet_type: int, sequence_number: int, timestamp: int = None, version: int = ZT_VERSION):
+    def __init__(self, packet_type: int, sequence_number: int, checksum: bytes = None, timestamp: int = None, version: int = ZT_VERSION):
         self.version = version
         self.packet_type = packet_type
         self.sequence_number = sequence_number
+        self.checksum = checksum if checksum is not None else b""
 
         if timestamp is None:
             timestamp = int(dt.now().timestamp())
 
         self.timestamp = timestamp
+
+    def update_checksum(self, raw_packet_data: bytes):
+        self.checksum = zlib.crc32(pack(ZTPACKET_CRC_SER, ZT_MAGIC, self.packet_type,
+            self.version, self.timestamp, self.sequence_number, raw_packet_data)) & 0xffffffff
 
     def serialize(self):
         return pack(
@@ -37,22 +55,24 @@ class ZTHeader(object):
             self.packet_type,
             self.version,
             self.timestamp,
-            self.sequence_number
+            self.sequence_number,
+            self.checksum
         )
 
     @classmethod
     def deserialize(cls, data: bytes):
-        magic, ptype, version, ts, seq = unpack(
+        magic, ptype, version, ts, seq, chk = unpack(
             ZTHEADER_SER,
             data
         )
 
-        return magic, cls(ptype, seq, ts, version)
+        return magic, cls(ptype, seq, chk, ts, version)
 
 class ZTPacket(object):
     def __init__(self, packet_type: int, sequence_number: int, data: bytes, timestamp: int = None, version: int = ZT_VERSION):
         self.raw_data = data
         self.header = ZTHeader(packet_type, sequence_number, timestamp=timestamp, version=version)
+        self.header.update_checksum(data)
 
     def serialize(self):
         return pack(
@@ -115,6 +135,29 @@ class ZTAcknowledgementPacket(ZTPacket):
 
         return cls(sequence_number, seq_to_ack, timestamp=timestamp, version=version)
 
+class ZTResendPacket(ZTPacket):
+    def __init__(self, sequence_number: int, seq_to_rsnd: int, timestamp: int = None, version: int = ZT_VERSION):
+        self.sequence_number = sequence_number
+        self.timestamp = timestamp
+        self.version = version
+
+        self.seq_to_rsnd = seq_to_rsnd
+
+        raw_data = pack(
+            ZTRSND_SER,
+            seq_to_rsnd
+        )
+
+        super().__init__(ZTRSND_TYPE, sequence_number, raw_data, timestamp=timestamp, version=version)
+
+    @classmethod
+    def deserialize(cls, sequence_number: int, timestamp: int, version: int, raw_data: bytes):
+        seq_to_rsnd = unpack(
+            ZTRSND_SER,
+            raw_data[:4]
+        )[0]
+
+        return cls(sequence_number, seq_to_rsnd, timestamp=timestamp, version=version)
 class ZTDataPacket(ZTPacket):
     def __init__(self, sequence_number: int, data: bytes, timestamp: int = None, version: int = ZT_VERSION):
         self.sequence_number = sequence_number
@@ -122,12 +165,9 @@ class ZTDataPacket(ZTPacket):
         self.version = version
 
         self.file_data = data
-
-        crc_checksum = zlib.crc32(pack("!984s", data)) & 0xffffffff
         
         raw_data = pack(
             ZTDATA_SER,
-            crc_checksum,
             data
         )
 
@@ -135,20 +175,10 @@ class ZTDataPacket(ZTPacket):
         
     @classmethod
     def deserialize(cls, sequence_number: int, timestamp: int, version: int, raw_data: bytes):
-        crc_checksum, pkg_data = unpack(
+        pkg_data = unpack(
             ZTDATA_SER,
             raw_data
-        )
-
-        pkg_data_checksum = zlib.crc32(pkg_data) & 0xffffffff
-
-        if pkg_data_checksum != crc_checksum:
-            raise ZTVerificationError(ERR_ZTDATA_CHECKSUM, extras={
-                "checksum": pkg_data_checksum,
-                "seq": sequence_number,
-                "ts": timestamp,
-                "version": version
-            })
+        )[0]
 
         return cls(sequence_number, pkg_data, timestamp=timestamp, version=version)
 
@@ -169,13 +199,26 @@ def deserialize_packet(data: bytes):
         ZTCONNREQ_TYPE: ZTConnReqPacket,
         ZTACK_TYPE: ZTAcknowledgementPacket,
         ZTDATA_TYPE: ZTDataPacket,
-        ZTFIN_TYPE: ZTFinishPacket
+        ZTFIN_TYPE: ZTFinishPacket,
+        ZTRSND_TYPE: ZTResendPacket
     }
 
-    magic, ptype, version, ts, seq, raw_data = unpack(
+    magic, ptype, version, ts, seq, chksum, raw_data = unpack(
         ZTPACKET_DESERIALIZE_HEADER,
         data
     )
+
+    pkt_checksum = zlib.crc32(pack(ZTPACKET_CRC_SER, ZT_MAGIC, ptype,
+        version, ts, seq, raw_data)) & 0xffffffff
+
+    if pkt_checksum != chksum:
+        raise ZTVerificationError(ERR_ZTDATA_CHECKSUM, extras={
+            "checksum": pkt_checksum,
+            "seq": seq,
+            "ts": ts,
+            "version": version,
+            "ptype": ptype
+        })
 
     if magic != ZT_MAGIC:
         raise ZTVerificationError(ERR_MAGIC_MISMATCH, extras={
