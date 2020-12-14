@@ -11,6 +11,7 @@ sys.path.append(os.path.normpath(
     os.path.join(SCRIPT_DIR, PACKAGE_PARENT, PACKAGE_PARENT)))
 
 from src.utils import get_logger, calc_sha3_512_checksum
+from src.ztransfer.profiler import Profiler
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
                                    ZTAcknowledgementPacket, ZTFinishPacket,
                                    ZTResendPacket, deserialize_packet,
@@ -105,6 +106,9 @@ class ZTransferUDPServer(object):
                 if not isinstance(packet, ZTConnReqPacket):
                     self.logger.warning(f"Was waiting for CREQ, got '{packet.__class__.__name__}'")
                 else:
+                    # Got first packet, start profiling.
+                    self.profiler = Profiler()
+
                     self.file_name = packet.filename
                     self.file_overall_checksum = packet.checksum
                     self.last_data_packet_seq = packet.last_seq
@@ -165,6 +169,8 @@ class ZTransferUDPServer(object):
                 if isinstance(packet, ZTDataPacket):
                     # Check for valid data seq num
                     if 1 <= packet.sequence_number <= self.last_data_packet_seq:
+                        self.profiler.pkt_tick(packet)
+                        
                         if packet.sequence_number == self.last_data_packet_seq:
                             self.buffer_memview[(packet.sequence_number - 1) * ZT_RAW_DATA_BYTES_SIZE : ] = packet.file_data[:self.last_data_packet_data_size]
                         else:
