@@ -12,6 +12,7 @@ SCRIPT_DIR = os.path.dirname(
 sys.path.append(os.path.normpath(
     os.path.join(SCRIPT_DIR, PACKAGE_PARENT, PACKAGE_PARENT)))
 
+from src.config import get_config
 from src.utils import get_logger, calc_sha3_512_checksum
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
                                    ZTAcknowledgementPacket, ZTFinishPacket,
@@ -21,13 +22,15 @@ from src.ztransfer.errors import (ZTVerificationError, ERR_VERSION_MISMATCH,
                                   ERR_ZTDATA_CHECKSUM, ERR_MAGIC_MISMATCH,
                                   ERR_PTYPE_DNE)
 
+config = get_config()
+
 CREQ_SEQ = 0
 DATA_SEQ_FIRST = 1
 
-CREQ_TIMER_DURATION = 3
-RAPID_RECV_TIMER_DURATION = 3
+CREQ_TIMER_DURATION = config["udp"]["client"].get("creq_timer_duration", 5)
+RAPID_RECV_TIMER_DURATION = config["udp"]["client"].get("rapid_recv_timer_duraton", 10)
 
-WINDOW_SIZE = 1000
+WINDOW_SIZE = config["udp"]["client"].get("window_size", 1000)
 
 class CREQTimeout(Exception):
     pass
@@ -60,6 +63,10 @@ class ZTransferUDPClient(object):
 
         self.logger = get_logger("ZTransferUDPClient", logger_verbose)
         self.logger.debug(f"Constructed ZTransferUDPClient({server_host}, {server_port}, ...)")
+
+        self.logger.debug(f"WINDOW_SIZE: {WINDOW_SIZE}")
+        self.logger.debug(f"CREQ_TIMER_DURATION: {CREQ_TIMER_DURATION}")
+        self.logger.debug(f"RAPID_RECV_TIMER_DURATION: {RAPID_RECV_TIMER_DURATION}")
 
     def _creq_timer_handler(self, *args, **kwargs):
         raise CREQTimeout()

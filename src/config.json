@@ -1,1 +1,9 @@
-{}
+{
+    "udp": {
+        "client": {
+            "creq_timer_duration": 1,
+            "rapid_recv_timer_duraton": 2,
+            "window_size": 500
+        }
+    }
+}
