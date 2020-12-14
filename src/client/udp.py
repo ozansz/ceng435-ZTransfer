@@ -23,8 +23,10 @@ from src.ztransfer.errors import (ZTVerificationError, ERR_VERSION_MISMATCH,
 CREQ_SEQ = 0
 DATA_SEQ_FIRST = 1
 
-CREQ_TIMER_DURATION = 10
-RAPID_RECV_TIMER_DURATION = 5
+CREQ_TIMER_DURATION = 3
+RAPID_RECV_TIMER_DURATION = 3
+
+WINDOW_SIZE = 1000
 
 class CREQTimeout(Exception):
     pass
@@ -116,16 +118,16 @@ class ZTransferUDPClient(object):
 
                     signal.signal(signal.SIGALRM, self._creq_timer_handler)
                     signal.alarm(CREQ_TIMER_DURATION)
-                    self.logger.debug(f"Sent CREQ packet and updated state to WAIT_CREQ_ACK")
 
                     state = self.STATE_WAIT_CREQ_ACK
+
                     self.logger.debug(f"Sent CREQ packet and updated state to WAIT_CREQ_ACK")
                 elif state == self.STATE_WAIT_CREQ_ACK:
                     self.logger.debug(f"State: WAIT_CREQ_ACK")
 
                     recv_data, server_addr = self.socket.recvfrom(1000)
 
-                    self.logger.debug(f"Received {len(recv_data)} bytes from the client")
+                    self.logger.debug(f"Received {len(recv_data)} bytes from the server")
 
                     if server_addr != self.server_addr:
                         # Discard packet
@@ -218,13 +220,19 @@ class ZTransferUDPClient(object):
                     signal.alarm(0)
 
                     self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
+                    self.session_sent_seqs = set()
 
                     if len(self.to_send_seqs) == 0:
                         state = self.STATE_FIN
                         self.logger.debug(f"Got all ACKs, updated state to FIN")
                         continue
 
+                    _window_ctr = 0
+
                     for packet_seq in self.to_send_seqs:
+                        if _window_ctr >= WINDOW_SIZE:
+                            break
+
                         self.file_stream.seek((packet_seq - 1) * 984)
 
                         if packet_seq == self.last_data_seq:
@@ -241,6 +249,9 @@ class ZTransferUDPClient(object):
                             self.logger.critical(f"Error occured while self.socket.sendto(): {e}")
                             self.clear()
                             return
+                        
+                        self.session_sent_seqs.add(packet_seq)
+                        _window_ctr += 1
 
                     signal.signal(signal.SIGALRM, self._rrecv_timer_handler)
                     signal.alarm(RAPID_RECV_TIMER_DURATION)
@@ -256,12 +267,20 @@ class ZTransferUDPClient(object):
                         self.logger.debug(f"Got all ACKs, updated state to FIN")
                         continue
 
+                    if self.session_sent_seqs.issubset(self.acked_packet_seqs):
+                        self.logger.debug(f"All window packets ACKed, updated state to RAPID_SEND")
+
+                        self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
+                        state = self.STATE_RAPID_SEND
+                        continue
+
                     recv_data, server_addr = self.socket.recvfrom(1000)
 
-                    self.logger.debug(f"Received {len(recv_data)} bytes from the client")
+                    self.logger.debug(f"Received {len(recv_data)} bytes from the server")
 
                     if server_addr != self.server_addr:
                         # Discard packet
+                        self.logger.debug(f"Another server ({server_addr}) sent the packet, discarding.")
                         continue
 
                     if len(recv_data) != 1000:
@@ -302,6 +321,7 @@ class ZTransferUDPClient(object):
                         pass
                 elif state == self.STATE_FIN:
                     self.logger.debug(f"State: FIN")
+                    self.clear()
                     break
             except CREQTimeout:
                 self.logger.debug(f"Timeout: Hit to CREQTimeout")
@@ -318,6 +338,8 @@ class ZTransferUDPClient(object):
 
                 self.logger.debug(f"Sent CREQ packet again and restarted timer")
             except RRecvTimeout:
+                self.logger.debug(f"Timeout: Hit to RRecvTimeout")
+
                 self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
                 state = self.STATE_RAPID_SEND
             except Exception as e:
