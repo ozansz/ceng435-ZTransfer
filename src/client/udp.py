@@ -57,7 +57,9 @@ class ZTransferUDPClient(object):
         self.acked_packet_seqs = set()
         self.all_data_seqs = set()
         self.to_send_seqs = set()
-        self.failed_packet_seqs = set()
+        self.session_sent_seqs = set()
+
+        self.failed_packet_count = 0
 
         self.buffer_memview = None
 
@@ -226,6 +228,8 @@ class ZTransferUDPClient(object):
 
                     # Ensure timer is stopped
                     signal.alarm(0)
+
+                    self.failed_packet_count += len(self.session_sent_seqs - self.all_data_seqs)
 
                     self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
                     self.session_sent_seqs = set()
