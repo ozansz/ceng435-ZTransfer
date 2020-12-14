@@ -11,6 +11,7 @@ sys.path.append(os.path.normpath(
     os.path.join(SCRIPT_DIR, PACKAGE_PARENT, PACKAGE_PARENT)))
 
 from src.utils import get_logger
+from src.ztransfer.profiler import Profiler
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
                                    ZTAcknowledgementPacket, ZTFinishPacket,
                                    deserialize_packet, ZT_RAW_DATA_BYTES_SIZE)
@@ -66,6 +67,9 @@ class ZTransferTCPServer(object):
 
                 self.client_socket, client_addr = self.socket.accept()
 
+                # Formed connection, start profiling
+                self.profiler = Profiler()
+
                 state = self.STATE_WAIT_CCREQ
             elif state == self.STATE_WAIT_CCREQ:
                 recv_data = self.client_socket.recv(1000)
@@ -90,6 +94,8 @@ class ZTransferTCPServer(object):
                         return
 
                 self.logger.debug(f"Packet OK: {packet.__class__.__name__} ({packet.sequence_number})")
+
+                self.profiler.pkt_tick(packet)
 
                 if not isinstance(packet, ZTConnReqPacket):
                     self.logger.warning(f"Was waiting for CREQ, got '{packet.ptype}'")
@@ -132,6 +138,8 @@ class ZTransferTCPServer(object):
                         return
 
                 self.logger.debug(f"Packet OK: {packet.__class__.__name__} ({packet.sequence_number})")
+
+                self.profiler.pkt_tick(packet)
 
                 if isinstance(packet, ZTDataPacket):
                     if packet.sequence_number ==  self.last_data_packet_seq:
