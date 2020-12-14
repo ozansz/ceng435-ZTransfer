@@ -18,6 +18,8 @@ def get_logger(name: str, verbose: bool = False):
 
     if verbose:
         logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.CRITICAL)
 
     return logger
 
@@ -45,4 +47,4 @@ def calc_sha3_512_checksum(data: bytes) -> bytes:
 
     return m.digest()
 
-generate_random_bytes = lambda len: b"".join([struct.pack("<I", random.randint(0, 2**32 - 1)) for _ in range(len)])
+generate_random_bytes = lambda len: b"".join([struct.pack("<s", random.randint(0, 2**8 - 1)) for _ in range(len)])
