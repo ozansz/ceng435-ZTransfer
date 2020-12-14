@@ -201,6 +201,3 @@ class ZTransferUDPServer(object):
 
         if self.socket is not None:
             self.socket.close()
-
-s = ZTransferUDPServer("0.0.0.0", [8001], logger_verbose=True)
-s.listen_for_transfer()
