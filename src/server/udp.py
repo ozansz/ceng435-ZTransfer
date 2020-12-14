@@ -197,7 +197,5 @@ class ZTransferUDPServer(object):
                 break
 
     def clear(self):
-        self.socket.close()
-
         if self.socket is not None:
             self.socket.close()
