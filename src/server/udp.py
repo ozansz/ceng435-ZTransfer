@@ -133,6 +133,11 @@ class ZTransferUDPServer(object):
 
                 recv_data, recv_addr = self.socket.recvfrom(1000)
 
+                if recv_addr != self.client_addr:
+                    # Discard packet
+                    self.logger.debug(f"Another client ({recv_addr}) sent the packet, discarding.")
+                    continue
+
                 if len(recv_data) != 1000:
                     self.logger.debug(f"Packet probably corrupt (data size != 1000), dropping packet")
                     continue
@@ -175,14 +180,10 @@ class ZTransferUDPServer(object):
                     else:
                         self.logger.debug(f"Data packet has seq out of ranges: {packet.sequence_number}, dropped.")
                 elif isinstance(packet, ZTConnReqPacket):
-                    if recv_addr == self.client_addr:
-                        ack_packet = ZTAcknowledgementPacket(curr_seq_number, packet.sequence_number)
-                        self.socket.sendto(ack_packet.serialize(), self.client_addr)
+                    ack_packet = ZTAcknowledgementPacket(curr_seq_number, packet.sequence_number)
+                    self.socket.sendto(ack_packet.serialize(), self.client_addr)
 
-                        curr_seq_number += 1
-                    else:
-                        # Just drop the packet
-                        pass
+                    curr_seq_number += 1
                 #elif isinstance(packet, ZTFinishPacket):
                 #    state = self.STATE_FIN
             elif state == self.STATE_FIN:
