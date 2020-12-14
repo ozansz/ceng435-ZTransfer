@@ -14,7 +14,7 @@ sys.path.append(os.path.normpath(
 from src.utils import get_logger, calc_sha3_512_checksum
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
                                    ZTAcknowledgementPacket, ZTFinishPacket,
-                                   deserialize_packet)
+                                   deserialize_packet, ZT_RAW_DATA_BYTES_SIZE)
 from src.ztransfer.errors import (ZTVerificationError, ERR_VERSION_MISMATCH,
                                   ERR_ZTDATA_CHECKSUM, ERR_MAGIC_MISMATCH,
                                   ERR_PTYPE_DNE)
@@ -41,9 +41,9 @@ class ZTransferTCPClient(object):
 
     def initiate_transfer(self):
         file_size_bytes = self.file_stream.getbuffer().nbytes
-        num_data_packets = file_size_bytes // 984
+        num_data_packets = file_size_bytes // ZT_RAW_DATA_BYTES_SIZE
 
-        if file_size_bytes % 984 > 0:
+        if file_size_bytes % ZT_RAW_DATA_BYTES_SIZE > 0:
             num_data_packets += 1
 
         file_checksum = calc_sha3_512_checksum(self.file_stream.getvalue())
@@ -135,12 +135,12 @@ class ZTransferTCPClient(object):
             elif state == self.STATE_TRANSFER:
                 self.logger.debug(f"State: TRANSFER")
 
-                if file_size_bytes - current_byte_position <  984:
+                if file_size_bytes - current_byte_position <  ZT_RAW_DATA_BYTES_SIZE:
                     file_bytes_to_send = self.file_stream.read()
                     is_last_transfer_packet = True
                 else:
-                    file_bytes_to_send = self.file_stream.read(984)
-                    current_byte_position += 984
+                    file_bytes_to_send = self.file_stream.read(ZT_RAW_DATA_BYTES_SIZE)
+                    current_byte_position += ZT_RAW_DATA_BYTES_SIZE
 
                 self.logger.debug(f"Will send {len(file_bytes_to_send)} bytes of file data to server")
 

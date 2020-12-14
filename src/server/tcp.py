@@ -13,7 +13,7 @@ sys.path.append(os.path.normpath(
 from src.utils import get_logger
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
                                    ZTAcknowledgementPacket, ZTFinishPacket,
-                                   deserialize_packet)
+                                   deserialize_packet, ZT_RAW_DATA_BYTES_SIZE)
 from src.ztransfer.errors import (ZTVerificationError, ERR_VERSION_MISMATCH,
                                   ERR_ZTDATA_CHECKSUM, ERR_MAGIC_MISMATCH,
                                   ERR_PTYPE_DNE)
@@ -99,7 +99,7 @@ class ZTransferTCPServer(object):
                 self.file_name = packet.filename
                 self.file_overall_checksum = packet.checksum
                 self.last_data_packet_seq = packet.last_seq
-                self.last_data_packet_data_size = packet.data_size - (984 * (packet.last_seq - 1))
+                self.last_data_packet_data_size = packet.data_size - (ZT_RAW_DATA_BYTES_SIZE * (packet.last_seq - 1))
 
                 ack_packet = ZTAcknowledgementPacket(1, packet.sequence_number)
                 self.client_socket.sendall(ack_packet.serialize())

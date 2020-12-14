@@ -15,7 +15,8 @@ sys.path.append(os.path.normpath(
 from src.utils import get_logger, calc_sha3_512_checksum
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
                                    ZTAcknowledgementPacket, ZTFinishPacket,
-                                   ZTResendPacket, deserialize_packet)
+                                   ZTResendPacket, deserialize_packet,
+                                   ZT_RAW_DATA_BYTES_SIZE)
 from src.ztransfer.errors import (ZTVerificationError, ERR_VERSION_MISMATCH,
                                   ERR_ZTDATA_CHECKSUM, ERR_MAGIC_MISMATCH,
                                   ERR_PTYPE_DNE)
@@ -69,9 +70,9 @@ class ZTransferUDPClient(object):
     def initiate_transfer(self):
         self.buffer_memview = self.file_stream.getbuffer()
         file_size_bytes = self.buffer_memview.nbytes
-        num_data_packets = file_size_bytes // 984
+        num_data_packets = file_size_bytes // ZT_RAW_DATA_BYTES_SIZE
 
-        if file_size_bytes % 984 > 0:
+        if file_size_bytes % ZT_RAW_DATA_BYTES_SIZE > 0:
             num_data_packets += 1
 
         self.last_data_seq = DATA_SEQ_FIRST + num_data_packets - 1
@@ -233,15 +234,15 @@ class ZTransferUDPClient(object):
                         if _window_ctr >= WINDOW_SIZE:
                             break
 
-                        self.file_stream.seek((packet_seq - 1) * 984)
+                        self.file_stream.seek((packet_seq - 1) * ZT_RAW_DATA_BYTES_SIZE)
 
                         if packet_seq == self.last_data_seq:
                             _data_bytes = self.file_stream.read()
                         else:
-                            _data_bytes = self.file_stream.read(984)
+                            _data_bytes = self.file_stream.read(ZT_RAW_DATA_BYTES_SIZE)
                             
                         data_packet = ZTDataPacket(packet_seq, _data_bytes)
-                        self.logger.debug(f"==> Data pkt #{packet_seq} ({(packet_seq - 1) * 984}:{(packet_seq - 1) * 984 + len(_data_bytes)})")
+                        self.logger.debug(f"==> Data pkt #{packet_seq} ({(packet_seq - 1) * ZT_RAW_DATA_BYTES_SIZE}:{(packet_seq - 1) * ZT_RAW_DATA_BYTES_SIZE + len(_data_bytes)})")
 
                         try:
                             self.socket.sendto(data_packet.serialize(), self.server_addr)

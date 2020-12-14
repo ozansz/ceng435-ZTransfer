@@ -4,17 +4,19 @@ from datetime import datetime as dt
 
 from .errors import ERR_MAGIC_MISMATCH, ERR_VERSION_MISMATCH, ERR_PTYPE_DNE, ERR_ZTDATA_CHECKSUM, ZTVerificationError
 
-ZT_MAGIC = b"ZT"
-ZT_VERSION = 4 # v0.4
+ZT_RAW_DATA_BYTES_SIZE = 980
 
-ZTHEADER_SER = "!2sBBIII"
-ZTPACKET_SER = "!16s984s"
+ZT_MAGIC = b"ZT"
+ZT_VERSION = 5 # v0.5
+
+ZTHEADER_SER = "!2sBBdII"
+ZTPACKET_SER = f"!20s{ZT_RAW_DATA_BYTES_SIZE}s"
 ZTCONNREQ_SER = "!II64s255s"
 ZTACK_SER = "!I"
 ZTRSND_SER = "!I"
-ZTDATA_SER = "!984s"
-ZTPACKET_DESERIALIZE_HEADER = "!2sBBIII984s"
-ZTPACKET_CRC_SER = "!2sBBII984s"
+ZTDATA_SER = f"!{ZT_RAW_DATA_BYTES_SIZE}s"
+ZTPACKET_DESERIALIZE_HEADER = f"!2sBBdII{ZT_RAW_DATA_BYTES_SIZE}s"
+ZTPACKET_CRC_SER = f"!2sBBdI{ZT_RAW_DATA_BYTES_SIZE}s"
 
 ZTCONNREQ_TYPE = 0
 ZTDATA_TYPE = 1
@@ -23,14 +25,14 @@ ZTFIN_TYPE = 3
 ZTRSND_TYPE = 4
 
 class ZTHeader(object):
-    def __init__(self, packet_type: int, sequence_number: int, checksum: bytes = None, timestamp: int = None, version: int = ZT_VERSION):
+    def __init__(self, packet_type: int, sequence_number: int, checksum: bytes = None, timestamp: float = None, version: int = ZT_VERSION):
         self.version = version
         self.packet_type = packet_type
         self.sequence_number = sequence_number
         self.checksum = checksum if checksum is not None else b""
 
         if timestamp is None:
-            timestamp = int(dt.now().timestamp())
+            timestamp = dt.now().timestamp()
 
         self.timestamp = timestamp
 
@@ -59,7 +61,7 @@ class ZTHeader(object):
         return magic, cls(ptype, seq, chk, ts, version)
 
 class ZTPacket(object):
-    def __init__(self, packet_type: int, sequence_number: int, data: bytes, timestamp: int = None, version: int = ZT_VERSION):
+    def __init__(self, packet_type: int, sequence_number: int, data: bytes, timestamp: float = None, version: int = ZT_VERSION):
         self.raw_data = data
         self.header = ZTHeader(packet_type, sequence_number, timestamp=timestamp, version=version)
         self.header.update_checksum(data)
@@ -72,7 +74,7 @@ class ZTPacket(object):
         )
 
 class ZTConnReqPacket(ZTPacket):
-    def __init__(self, sequence_number: int, data_size: int, last_seq: int, checksum: bytes, filename: str, timestamp: int = None, version: int = ZT_VERSION):
+    def __init__(self, sequence_number: int, data_size: int, last_seq: int, checksum: bytes, filename: str, timestamp: float = None, version: int = ZT_VERSION):
         self.sequence_number = sequence_number
         self.timestamp = timestamp
         self.version = version
@@ -93,7 +95,7 @@ class ZTConnReqPacket(ZTPacket):
         super().__init__(ZTCONNREQ_TYPE, sequence_number, raw_data, timestamp=timestamp, version=version)
 
     @classmethod
-    def deserialize(cls, sequence_number: int, timestamp: int, version: int, raw_data: bytes):
+    def deserialize(cls, sequence_number: int, timestamp: float, version: int, raw_data: bytes):
         data_size, last_seq, checksum, filename = unpack(
             ZTCONNREQ_SER,
             raw_data[:327]
@@ -102,7 +104,7 @@ class ZTConnReqPacket(ZTPacket):
         return cls(sequence_number, data_size, last_seq, checksum, filename.decode("utf8"), timestamp=timestamp, version=version)
 
 class ZTAcknowledgementPacket(ZTPacket):
-    def __init__(self, sequence_number: int, seq_to_ack: int, timestamp: int = None, version: int = ZT_VERSION):
+    def __init__(self, sequence_number: int, seq_to_ack: int, timestamp: float = None, version: int = ZT_VERSION):
         self.sequence_number = sequence_number
         self.timestamp = timestamp
         self.version = version
@@ -117,7 +119,7 @@ class ZTAcknowledgementPacket(ZTPacket):
         super().__init__(ZTACK_TYPE, sequence_number, raw_data, timestamp=timestamp, version=version)
 
     @classmethod
-    def deserialize(cls, sequence_number: int, timestamp: int, version: int, raw_data: bytes):
+    def deserialize(cls, sequence_number: int, timestamp: float, version: int, raw_data: bytes):
         seq_to_ack = unpack(
             ZTACK_SER,
             raw_data[:4]
@@ -126,7 +128,7 @@ class ZTAcknowledgementPacket(ZTPacket):
         return cls(sequence_number, seq_to_ack, timestamp=timestamp, version=version)
 
 class ZTResendPacket(ZTPacket):
-    def __init__(self, sequence_number: int, seq_to_rsnd: int, timestamp: int = None, version: int = ZT_VERSION):
+    def __init__(self, sequence_number: int, seq_to_rsnd: int, timestamp: float = None, version: int = ZT_VERSION):
         self.sequence_number = sequence_number
         self.timestamp = timestamp
         self.version = version
@@ -141,7 +143,7 @@ class ZTResendPacket(ZTPacket):
         super().__init__(ZTRSND_TYPE, sequence_number, raw_data, timestamp=timestamp, version=version)
 
     @classmethod
-    def deserialize(cls, sequence_number: int, timestamp: int, version: int, raw_data: bytes):
+    def deserialize(cls, sequence_number: int, timestamp: float, version: int, raw_data: bytes):
         seq_to_rsnd = unpack(
             ZTRSND_SER,
             raw_data[:4]
@@ -149,7 +151,7 @@ class ZTResendPacket(ZTPacket):
 
         return cls(sequence_number, seq_to_rsnd, timestamp=timestamp, version=version)
 class ZTDataPacket(ZTPacket):
-    def __init__(self, sequence_number: int, data: bytes, timestamp: int = None, version: int = ZT_VERSION):
+    def __init__(self, sequence_number: int, data: bytes, timestamp: float = None, version: int = ZT_VERSION):
         self.sequence_number = sequence_number
         self.timestamp = timestamp
         self.version = version
@@ -164,7 +166,7 @@ class ZTDataPacket(ZTPacket):
         super().__init__(ZTDATA_TYPE, sequence_number, raw_data, timestamp=timestamp, version=version)
         
     @classmethod
-    def deserialize(cls, sequence_number: int, timestamp: int, version: int, raw_data: bytes):
+    def deserialize(cls, sequence_number: int, timestamp: float, version: int, raw_data: bytes):
         pkg_data = unpack(
             ZTDATA_SER,
             raw_data
@@ -173,7 +175,7 @@ class ZTDataPacket(ZTPacket):
         return cls(sequence_number, pkg_data, timestamp=timestamp, version=version)
 
 class ZTFinishPacket(ZTPacket):
-    def __init__(self, sequence_number: int, timestamp: int = None, version: int = ZT_VERSION):
+    def __init__(self, sequence_number: int, timestamp: float = None, version: int = ZT_VERSION):
         self.sequence_number = sequence_number
         self.timestamp = timestamp
         self.version = version
@@ -181,7 +183,7 @@ class ZTFinishPacket(ZTPacket):
         super().__init__(ZTFIN_TYPE, sequence_number, b"", timestamp=timestamp, version=version)
 
     @classmethod
-    def deserialize(cls, sequence_number: int, timestamp: int, version: int, raw_data: bytes):
+    def deserialize(cls, sequence_number: int, timestamp: float, version: int, raw_data: bytes):
         return cls(sequence_number, timestamp=timestamp, version=version)
 
 def deserialize_packet(data: bytes):
