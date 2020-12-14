@@ -10,13 +10,15 @@ SCRIPT_DIR = os.path.dirname(
 sys.path.append(os.path.normpath(
     os.path.join(SCRIPT_DIR, PACKAGE_PARENT, PACKAGE_PARENT)))
 
-from src.utils import get_logger
+from src.utils import get_logger, calc_sha3_512_checksum
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
                                    ZTAcknowledgementPacket, ZTFinishPacket,
                                    ZTResendPacket, deserialize_packet)
 from src.ztransfer.errors import (ZTVerificationError, ERR_VERSION_MISMATCH,
                                   ERR_ZTDATA_CHECKSUM, ERR_MAGIC_MISMATCH,
                                   ERR_PTYPE_DNE)
+
+DATA_SEQ_FIRST = 1
 
 class ZTransferUDPServer(object):
     STATE_INIT = 0
@@ -36,19 +38,20 @@ class ZTransferUDPServer(object):
         self.last_data_packet_seq = None
         self.last_data_packet_data_size = None
 
+        self.remaining_data_seqs = None
+
         self.client_addr = None
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
         self.logger = get_logger("ZTransferUDPServer", logger_verbose)
-            
         self.logger.debug(f"Constructed ZTransferUDPServer({bind_host}, {port_pool})")
 
     def listen_for_transfer(self):
         state = self.STATE_INIT
         curr_seq_number = 1
 
-        while state != self.STATE_FIN:
+        while True:
             if state == self.STATE_INIT:
                 self.logger.debug(f"State: INIT")
 
@@ -67,6 +70,8 @@ class ZTransferUDPServer(object):
                     self.clear()
                     return
 
+                self.logger.debug(f"Bound to port: {self.port_occupied}")
+
                 state = self.STATE_WAIT_CCREQ
             elif state == self.STATE_WAIT_CCREQ:
                 self.logger.debug(f"State: WAIT_CCREQ")
@@ -75,47 +80,62 @@ class ZTransferUDPServer(object):
 
                 self.logger.debug(f"Received {len(recv_data)} bytes from the client")
 
+                if len(recv_data) != 1000:
+                    self.logger.debug(f"Packet probably corrupt (data size != 1000), dropping packet")
+                    continue
+
                 try:
                     self.logger.debug(f"Deserializing received packet data...")
                     packet = deserialize_packet(recv_data)
                 except ZTVerificationError as e:
                     if e.err_code == ERR_MAGIC_MISMATCH:
                         self.logger.warning(f"Wrong magic number '{e.extras['magic']}' (seq: {e.extras['seq']}, ptype: {e.extras['ptype']}, ts: {e.extras['ts']})")
-                        pass
                     if e.err_code == ERR_VERSION_MISMATCH:
                         self.logger.warning(f"Mismatched version number '{e.extras['version']}' (seq: {e.extras['seq']}, ptype: {e.extras['ptype']}, ts: {e.extras['ts']})")
-                        pass
                     if e.err_code == ERR_PTYPE_DNE:
                         self.logger.warning(f"Not known packet type '{e.extras['ptype']}' (seq: {e.extras['seq']}, ts: {e.extras['ts']})")
-                        pass
                     if e.err_code == ERR_ZTDATA_CHECKSUM:
                         self.logger.warning(f"Corrupt packet. (seq: {e.extras['seq']}, ptype: {e.extras['ptype']}, ts: {e.extras['ts']})")
-                        pass
+
+                    continue
+
+                self.logger.debug(f"Packet OK: {packet.__class__.__name__} ({packet.sequence_number})")
+
+                if not isinstance(packet, ZTConnReqPacket):
+                    self.logger.warning(f"Was waiting for CREQ, got '{packet.__class__.__name__}'")
                 else:
-                    self.logger.debug(f"Packet OK: {packet.__class__.__name__} ({packet.sequence_number})")
+                    self.file_name = packet.filename
+                    self.file_overall_checksum = packet.checksum
+                    self.last_data_packet_seq = packet.last_seq
+                    self.last_data_packet_data_size = packet.data_size - (984 * (packet.last_seq - 1))
 
-                    if not isinstance(packet, ZTConnReqPacket):
-                        self.logger.warning(f"Was waiting for CREQ, got '{packet.ptype}'")
-                    else:
-                        self.file_name = packet.filename
-                        self.file_overall_checksum = packet.checksum
-                        self.last_data_packet_seq = packet.last_seq
-                        self.last_data_packet_data_size = packet.data_size - (984 * (packet.last_seq - 1))
+                    self.all_data_seqs = set(range(DATA_SEQ_FIRST, DATA_SEQ_FIRST + self.last_data_packet_seq))
 
-                        self.buffer_bytearray = bytearray(packet.data_size)
-                        self.buffer_memview = memoryview(self.buffer_bytearray)
+                    self.buffer_bytearray = bytearray(packet.data_size)
+                    self.buffer_memview = memoryview(self.buffer_bytearray)
 
-                        self.client_addr = client_addr
+                    self.client_addr = client_addr
 
-                        ack_packet = ZTAcknowledgementPacket(curr_seq_number, packet.sequence_number)
-                        self.socket.sendto(ack_packet.serialize(), self.client_addr)
+                    ack_packet = ZTAcknowledgementPacket(curr_seq_number, packet.sequence_number)
+                    self.socket.sendto(ack_packet.serialize(), self.client_addr)
 
-                        curr_seq_number += 1
-                        state = self.STATE_TRANSFER
+                    self.logger.debug(f"Sent ACK to CREQ to server {self.client_addr}")
+
+                    curr_seq_number += 1
+                    state = self.STATE_TRANSFER
             elif state == self.STATE_TRANSFER:
                 self.logger.debug(f"State: TRANSFER")
 
+                if len(self.all_data_seqs) == 0:
+                    self.logger.debug(f"All packets recvd, updated state to FIN")
+                    state = self.STATE_FIN
+                    continue
+
                 recv_data, recv_addr = self.socket.recvfrom(1000)
+
+                if len(recv_data) != 1000:
+                    self.logger.debug(f"Packet probably corrupt (data size != 1000), dropping packet")
+                    continue
 
                 self.logger.debug(f"Received {len(recv_data)} bytes from the client")
 
@@ -125,32 +145,36 @@ class ZTransferUDPServer(object):
                 except ZTVerificationError as e:
                     if e.err_code == ERR_MAGIC_MISMATCH:
                         self.logger.warning(f"Wrong magic number '{e.extras['magic']}' (seq: {e.extras['seq']}, ptype: {e.extras['ptype']}, ts: {e.extras['ts']})")
-                        pass
                     if e.err_code == ERR_VERSION_MISMATCH:
                         self.logger.warning(f"Mismatched version number '{e.extras['version']}' (seq: {e.extras['seq']}, ptype: {e.extras['ptype']}, ts: {e.extras['ts']})")
-                        pass
                     if e.err_code == ERR_PTYPE_DNE:
                         self.logger.warning(f"Not known packet type '{e.extras['ptype']}' (seq: {e.extras['seq']}, ts: {e.extras['ts']})")
-                        pass
                     if e.err_code == ERR_ZTDATA_CHECKSUM:
                         self.logger.warning(f"Corrupt packet. (seq: {e.extras['seq']}, ptype: {e.extras['ptype']}, ts: {e.extras['ts']})")
-                        pass
+
+                    continue
 
                 self.logger.debug(f"Packet OK: {packet.__class__.__name__} ({packet.sequence_number})")
 
                 if isinstance(packet, ZTDataPacket):
                     # Check for valid data seq num
-                    if 1 <= packet.sequence_number <= (2**32 - 2):
+                    if 1 <= packet.sequence_number <= self.last_data_packet_seq:
                         if packet.sequence_number == self.last_data_packet_seq:
-                            self.buffer_memview[(packet.sequence_number - 1) * 984 : packet.sequence_number * 984] = packet.file_data[:self.last_data_packet_data_size]
+                            self.buffer_memview[(packet.sequence_number - 1) * 984 : ] = packet.file_data[:self.last_data_packet_data_size]
                         else:
                             self.buffer_memview[(packet.sequence_number - 1) * 984 : packet.sequence_number * 984] = packet.file_data
+
+                        self.all_data_seqs.discard(packet.sequence_number)
 
                         ack_packet = ZTAcknowledgementPacket(curr_seq_number, packet.sequence_number)
                         self.socket.sendto(ack_packet.serialize(), self.client_addr)
 
+                        self.logger.debug(f"Sent ACK for data packet #{packet.sequence_number}")
+
                         curr_seq_number += 1
-                elif isinstance(packet, ZConnReqPacket):
+                    else:
+                        self.logger.debug(f"Data packet has seq out of ranges: {packet.sequence_number}, dropped.")
+                elif isinstance(packet, ZTConnReqPacket):
                     if recv_addr == self.client_addr:
                         ack_packet = ZTAcknowledgementPacket(curr_seq_number, packet.sequence_number)
                         self.socket.sendto(ack_packet.serialize(), self.client_addr)
@@ -159,14 +183,24 @@ class ZTransferUDPServer(object):
                     else:
                         # Just drop the packet
                         pass
-                elif isinstance(packet, ZTFinishPacket):
-                    state = self.STATE_FIN
+                #elif isinstance(packet, ZTFinishPacket):
+                #    state = self.STATE_FIN
+            elif state == self.STATE_FIN:
+                buffer_checksum = calc_sha3_512_checksum(self.buffer_bytearray)
 
-        self.logger.debug(f"State: FIN")
-        self.clear()
+                if buffer_checksum != self.file_overall_checksum:
+                    self.logger.critical(f"File checksum mismatch!")
+                else:
+                    self.logger.debug(f"File checksum OK")
+
+                self.clear()
+                break
 
     def clear(self):
         self.socket.close()
 
         if self.socket is not None:
             self.socket.close()
+
+s = ZTransferUDPServer("0.0.0.0", [8001], logger_verbose=True)
+s.listen_for_transfer()
