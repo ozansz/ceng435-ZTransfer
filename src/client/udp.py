@@ -255,7 +255,7 @@ class ZTransferUDPClient(object):
                             drop_factor = len(self.session_sent_seqs - self.session_acked_seqs) / len(self.session_sent_seqs)
                             drop_factor *= 100
 
-                            if drop_factor < self.old_drop_factor:
+                            if (drop_factor < self.old_drop_factor) or (drop_factor == 0):
                                 self.logger.debug(f"Drop factor ({drop_factor}) is less than old one ({self.old_drop_factor})")
 
                                 if self.__in_rapid_start:
@@ -421,7 +421,7 @@ class ZTransferUDPClient(object):
                         drop_factor = len(self.session_sent_seqs - self.session_acked_seqs) / len(self.session_sent_seqs)
                         drop_factor *= 100
 
-                        if drop_factor < self.old_drop_factor:
+                        if (drop_factor < self.old_drop_factor) or (drop_factor == 0):
                             self.logger.debug(f"Drop factor ({drop_factor}) is less than old one ({self.old_drop_factor})")
 
                             if self.__in_rapid_start:
