@@ -18,7 +18,7 @@ if __name__ == "__main__":
         file_name = "transfer_file_TCP.txt"
 
         client = ZTransferTCPClient(server_ip, server_tcp_port,
-            [client_tcp_port], file_name, file_stream, True)
+            [client_tcp_port], file_name, file_stream, False)
 
         client.initiate_transfer()
 
@@ -27,6 +27,6 @@ if __name__ == "__main__":
         file_name = "transfer_file_UDP.txt"
 
         client = ZTransferUDPClient(server_ip, server_udp_port,
-            [client_udp_port], file_name, file_stream, True)
+            [client_udp_port], file_name, file_stream, False)
 
         client.initiate_transfer()
