@@ -127,5 +127,6 @@ ZTransfer uses a modified version of RDT 3.0 with pipeline impl. of Selective Re
 
 #### Server
 
+![rdt-server](rdt-server.jpg)
 
 #### Client
