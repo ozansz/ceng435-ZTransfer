@@ -363,13 +363,14 @@ class ZTransferUDPClient(object):
                 self.logger.debug(f"Sent CREQ packet again and restarted timer")
             except RRecvTimeout:
                 self.logger.debug(f"Timeout: Hit to RRecvTimeout")
-                self.logger.debug(f"server_disconnect_ctr: {self._server_disconnect_ctr}")
 
                 if self._acks_got_up_to_timeout == 0:
                     self._server_disconnect_ctr += 1
                 else:
                     self._server_disconnect_ctr = 0
 
+                self.logger.debug(f"server_disconnect_ctr: {self._server_disconnect_ctr}")
+                
                 if self._server_disconnect_ctr >= MAX_RESENDS_BEFORE_TIMEOUT:
                     # Server is probably down.
                     self.logger.debug(f"Resent the same window for {self._server_disconnect_ctr} times. The server is probably down. Updated state to FIN.")
