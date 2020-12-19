@@ -371,6 +371,7 @@ class ZTransferUDPClient(object):
 
                 if self._server_disconnect_ctr >= MAX_RESENDS_BEFORE_TIMEOUT:
                     # Server is probably down.
+                    self.logger.debug(f"Resent the same window for {self._server_disconnect_ctr} times. The server is probably down. Updated state to FIN.")
                     state = self.STATE_FIN
                 else:
                     self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
