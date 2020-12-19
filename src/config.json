@@ -3,8 +3,12 @@
         "client": {
             "creq_timer_duration": 1,
             "rapid_recv_timer_duraton": 1,
-            "window_size": 150,
-            "max_resends_before_timeout": 20
+            "window_size_start": 25,
+            "window_increase_factor_rapid_start": 2,
+            "window_increase_factor_regular": 10,
+            "window_decrease_factor_regular": 2,
+            "max_resends_before_timeout": 20,
+            "ws_rapid_start_max": 1000
         },
         "server": {
             "finish_seq_packets": 20

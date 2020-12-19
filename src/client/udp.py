@@ -27,11 +27,15 @@ config = get_config()
 CREQ_SEQ = 0
 DATA_SEQ_FIRST = 1
 
-CREQ_TIMER_DURATION = config["udp"]["client"].get("creq_timer_duration", 5)
-RAPID_RECV_TIMER_DURATION = config["udp"]["client"].get("rapid_recv_timer_duraton", 10)
+CREQ_TIMER_DURATION = config["udp"]["client"].get("creq_timer_duration", 1)
+RAPID_RECV_TIMER_DURATION = config["udp"]["client"].get("rapid_recv_timer_duraton", 1)
 MAX_RESENDS_BEFORE_TIMEOUT = config["udp"]["client"].get("max_resends_before_timeout", 20)
 
-WINDOW_SIZE = config["udp"]["client"].get("window_size", 1000)
+WINDOW_SIZE_START = config["udp"]["client"].get("window_size_start", 100)
+WINDOW_SIZE_INC_RAP = config["udp"]["client"].get("window_increase_factor_rapid_start", 2)
+WINDOW_SIZE_INC_REG = config["udp"]["client"].get("window_increase_factor_regular", 10)
+WINDOW_SIZE_DEC_REG = config["udp"]["client"].get("window_decrease_factor_regular", 2)
+WS_RAPID_START_MAX = config["udp"]["client"].get("ws_rapid_start_max", 1000)
 
 class CREQTimeout(Exception):
     pass
@@ -64,12 +68,16 @@ class ZTransferUDPClient(object):
         self._server_disconnect_ctr = 0
         self._acks_got_up_to_timeout = 0
 
+        self.old_drop_factor = 100
+        self.window_size = WINDOW_SIZE_START
+        self.__in_rapid_start = True
+
         self.buffer_memview = None
 
         self.logger = get_logger("ZTransferUDPClient", logger_verbose)
         self.logger.debug(f"Constructed ZTransferUDPClient({server_host}, {server_port}, ...)")
 
-        self.logger.debug(f"WINDOW_SIZE: {WINDOW_SIZE}")
+        self.logger.debug(f"WINDOW_SIZE: {self.window_size}")
         self.logger.debug(f"CREQ_TIMER_DURATION: {CREQ_TIMER_DURATION}")
         self.logger.debug(f"RAPID_RECV_TIMER_DURATION: {RAPID_RECV_TIMER_DURATION}")
 
@@ -236,6 +244,7 @@ class ZTransferUDPClient(object):
 
                     self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
                     self.session_sent_seqs = set()
+                    self.session_acked_seqs = set()
 
                     if len(self.to_send_seqs) == 0:
                         state = self.STATE_FIN
@@ -245,7 +254,7 @@ class ZTransferUDPClient(object):
                     _window_ctr = 0
 
                     for packet_seq in self.to_send_seqs:
-                        if _window_ctr >= WINDOW_SIZE:
+                        if _window_ctr >= self.window_size:
                             break
 
                         self.file_stream.seek((packet_seq - 1) * ZT_RAW_DATA_BYTES_SIZE)
@@ -323,6 +332,7 @@ class ZTransferUDPClient(object):
                     if isinstance(packet, ZTAcknowledgementPacket):
                         if DATA_SEQ_FIRST <= packet.seq_to_ack <= (2**32 - 2):
                             self.acked_packet_seqs.add(packet.seq_to_ack)
+                            self.session_acked_seqs.add(packet.seq_to_ack)
                             self.logger.debug(f"ACK received for data packet #{packet.seq_to_ack}")
 
                             self._acks_got_up_to_timeout += 1
@@ -331,6 +341,7 @@ class ZTransferUDPClient(object):
                     elif isinstance(packet, ZTResendPacket):
                         if DATA_SEQ_FIRST <= packet.seq_to_rsnd <= (2**32 - 2):
                             self.acked_packet_seqs.discard(packet.seq_to_rsnd)
+                            self.session_acked_seqs.discard(packet.seq_to_rsnd)
                             self.logger.debug(f"RSND received for data packet #{packet.seq_to_rsnd}")
 
                             self._acks_got_up_to_timeout += 1
@@ -376,6 +387,28 @@ class ZTransferUDPClient(object):
                     self.logger.debug(f"Resent the same window for {self._server_disconnect_ctr} times. The server is probably down. Updated state to FIN.")
                     state = self.STATE_FIN
                 else:
+                    # This must not be but for protection anyway
+                    if len(self.session_sent_seqs) > 0:
+                        drop_factor = len(self.session_sent_seqs - self.session_acked_seqs) / len(self.session_sent_seqs)
+                        drop_factor *= 100
+
+                        if drop_factor < self.old_drop_factor:
+                            self.logger.debug(f"Drop factor ({drop_factor}) is less than old one ({self.old_drop_factor})")
+
+                            if self.__in_rapid_start:
+                                self.window_size *= WINDOW_SIZE_INC_RAP
+                            else:
+                                self.window_size += WINDOW_SIZE_INC_REG
+                        else:
+                            self.logger.debug(f"Drop factor ({drop_factor}) is greater than old one ({self.old_drop_factor})")
+
+                            self.window_size = max(WINDOW_SIZE_START, self.window_size / WINDOW_SIZE_DEC_REG)
+                            self.__in_rapid_start = False
+
+                        self.old_drop_factor = drop_factor
+
+                        self.logger.debug(f"New window size: {self.window_size}")
+
                     self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
                     state = self.STATE_RAPID_SEND
             except Exception as e:
