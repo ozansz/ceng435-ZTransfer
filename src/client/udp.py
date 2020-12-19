@@ -307,7 +307,7 @@ class ZTransferUDPClient(object):
                         self.__in_first_rtt = False
 
                     self._acks_got_up_to_timeout = 0
-                    self.logger.debug(f"Sent {len(self.to_send_seqs)} data packets and started RAPID_RECV timer")
+                    self.logger.debug(f"Sent {_window_ctr} data packets and started RAPID_RECV timer")
 
                     state = self.STATE_RAPID_RECV
                 elif state == self.STATE_RAPID_RECV:
