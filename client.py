@@ -30,3 +30,5 @@ if __name__ == "__main__":
             [client_udp_port], file_name, file_stream, False)
 
         client.initiate_transfer()
+
+        print(f"UDP Transmission Re-transferred Packets: {client.failed_packet_count}")
