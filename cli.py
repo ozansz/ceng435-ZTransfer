@@ -35,8 +35,8 @@ if __name__ == "__main__":
 
         server.listen_for_transfer()
 
-        cli_logger.info(f"TCP Packets Average Transmission Time: {server.profiler.avg_trasmission_time * 1000} ms")
-        cli_logger.info(f"TCP Communication Total Transmission Time: {server.profiler.total_transmission_time * 1000} ms")
+        print(f"TCP Packets Average Transmission Time: {server.profiler.avg_trasmission_time * 1000} ms")
+        print(f"TCP Communication Total Transmission Time: {server.profiler.total_transmission_time * 1000} ms")
 
         checksum = calc_sha3_512_checksum(server.recv_bytes_data)
 
@@ -68,7 +68,7 @@ if __name__ == "__main__":
 
             client.initiate_transfer()
 
-            cli_logger.info(f"UDP Transmission Re-transferred Packets: {client.failed_packet_count}")
+            print(f"UDP Transmission Re-transferred Packets: {client.failed_packet_count}")
     elif args.subparser_name == "udp-server":
         cli_logger.debug("Initializing UDP server")
 
@@ -77,8 +77,8 @@ if __name__ == "__main__":
 
         server.listen_for_transfer()
 
-        cli_logger.info(f"UDP Packets Average Transmission Time: {server.profiler.avg_trasmission_time * 1000} ms")
-        cli_logger.info(f"UDP Communication Total Transmission Time: {server.profiler.total_transmission_time * 1000} ms")
+        print(f"UDP Packets Average Transmission Time: {server.profiler.avg_trasmission_time * 1000} ms")
+        print(f"UDP Communication Total Transmission Time: {server.profiler.total_transmission_time * 1000} ms")
 
         if args.save_path is None:
             save_path = pathlib.Path(__file__).parent.absolute()
