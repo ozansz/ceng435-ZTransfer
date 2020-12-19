@@ -71,6 +71,8 @@ class ZTransferUDPClient(object):
         self.old_drop_factor = 100
         self.window_size = WINDOW_SIZE_START
         self.__in_rapid_start = True
+        self.__in_first_rtt = True
+        self._updated_window_size_in_rtt = False
 
         self.buffer_memview = None
 
@@ -241,16 +243,37 @@ class ZTransferUDPClient(object):
                     signal.alarm(0)
 
                     self.failed_packet_count += len(self.session_sent_seqs - self.acked_packet_seqs)
-
                     self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
-                    self.session_sent_seqs = set()
-                    self.session_acked_seqs = set()
 
                     if len(self.to_send_seqs) == 0:
                         state = self.STATE_FIN
                         self.logger.debug(f"Got all ACKs, updated state to FIN")
                         continue
 
+                    if (not self._updated_window_size_in_rtt) and (not self.__in_first_rtt):
+                        if len(self.session_sent_seqs) > 0:
+                            drop_factor = len(self.session_sent_seqs - self.session_acked_seqs) / len(self.session_sent_seqs)
+                            drop_factor *= 100
+
+                            if drop_factor < self.old_drop_factor:
+                                self.logger.debug(f"Drop factor ({drop_factor}) is less than old one ({self.old_drop_factor})")
+
+                                if self.__in_rapid_start:
+                                    self.window_size *= WINDOW_SIZE_INC_RAP
+                                else:
+                                    self.window_size += WINDOW_SIZE_INC_REG
+                            else:
+                                self.logger.debug(f"Drop factor ({drop_factor}) is greater than old one ({self.old_drop_factor})")
+
+                                self.window_size = max(WINDOW_SIZE_START, self.window_size / WINDOW_SIZE_DEC_REG)
+                                self.__in_rapid_start = False
+
+                            self.old_drop_factor = drop_factor
+
+                    self.session_sent_seqs = set()
+                    self.session_acked_seqs = set()
+
+                    self.logger.debug(f"RTT window size: {self.window_size}")
                     _window_ctr = 0
 
                     for packet_seq in self.to_send_seqs:
@@ -280,11 +303,17 @@ class ZTransferUDPClient(object):
                     signal.signal(signal.SIGALRM, self._rrecv_timer_handler)
                     signal.alarm(RAPID_RECV_TIMER_DURATION)
 
+                    if self.__in_first_rtt:
+                        self.__in_first_rtt = False
+
                     self._acks_got_up_to_timeout = 0
-                    state = self.STATE_RAPID_RECV
                     self.logger.debug(f"Sent {len(self.to_send_seqs)} data packets and started RAPID_RECV timer")
+
+                    state = self.STATE_RAPID_RECV
                 elif state == self.STATE_RAPID_RECV:
                     self.logger.debug(f"State: RAPID_RECV")
+
+                    self._updated_window_size_in_rtt = False
 
                     if self.acked_packet_seqs == self.all_data_seqs:
                         signal.alarm(0)
@@ -406,8 +435,7 @@ class ZTransferUDPClient(object):
                             self.__in_rapid_start = False
 
                         self.old_drop_factor = drop_factor
-
-                        self.logger.debug(f"New window size: {self.window_size}")
+                        self._updated_window_size_in_rtt = True
 
                     self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
                     state = self.STATE_RAPID_SEND
