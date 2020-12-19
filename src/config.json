@@ -3,7 +3,11 @@
         "client": {
             "creq_timer_duration": 1,
             "rapid_recv_timer_duraton": 1,
-            "window_size": 500
+            "window_size": 500,
+            "max_resends_before_timeout": 20
+        },
+        "server": {
+            "finish_seq_packets": 20
         }
     }
 }

@@ -29,6 +29,7 @@ DATA_SEQ_FIRST = 1
 
 CREQ_TIMER_DURATION = config["udp"]["client"].get("creq_timer_duration", 5)
 RAPID_RECV_TIMER_DURATION = config["udp"]["client"].get("rapid_recv_timer_duraton", 10)
+MAX_RESENDS_BEFORE_TIMEOUT = config["udp"]["client"].get("max_resends_before_timeout", 20)
 
 WINDOW_SIZE = config["udp"]["client"].get("window_size", 1000)
 
@@ -60,6 +61,8 @@ class ZTransferUDPClient(object):
         self.session_sent_seqs = set()
 
         self.failed_packet_count = 0
+        self._server_disconnect_ctr = 0
+        self._acks_got_up_to_timeout = 0
 
         self.buffer_memview = None
 
@@ -268,6 +271,7 @@ class ZTransferUDPClient(object):
                     signal.signal(signal.SIGALRM, self._rrecv_timer_handler)
                     signal.alarm(RAPID_RECV_TIMER_DURATION)
 
+                    self._acks_got_up_to_timeout = 0
                     state = self.STATE_RAPID_RECV
                     self.logger.debug(f"Sent {len(self.to_send_seqs)} data packets and started RAPID_RECV timer")
                 elif state == self.STATE_RAPID_RECV:
@@ -320,14 +324,22 @@ class ZTransferUDPClient(object):
                         if DATA_SEQ_FIRST <= packet.seq_to_ack <= (2**32 - 2):
                             self.acked_packet_seqs.add(packet.seq_to_ack)
                             self.logger.debug(f"ACK received for data packet #{packet.seq_to_ack}")
+
+                            self._acks_got_up_to_timeout += 1
                         else:
                             self.logger.debug(f"ACK packet has seq_to_ack out of ranges: {packet.seq_to_ack}, dropped.")
                     elif isinstance(packet, ZTResendPacket):
                         if DATA_SEQ_FIRST <= packet.seq_to_rsnd <= (2**32 - 2):
                             self.acked_packet_seqs.discard(packet.seq_to_rsnd)
                             self.logger.debug(f"RSND received for data packet #{packet.seq_to_rsnd}")
+
+                            self._acks_got_up_to_timeout += 1
                         else:
                             self.logger.debug(f"RSND packet has seq_to_rsnd out of ranges: {packet.seq_to_rsnd}, dropped.")
+                    elif isinstance(packet, ZTFinishPacket):
+                        self.logger.debug(f"Received FIN packet, premature finish, updated state to FIN.")
+                        state = self.STATE_FIN
+                        continue
                     else:
                         self.logger.warning(f"Was waiting for ACK or RSND, got '{packet.ptype}', discarded.")
                         pass
@@ -352,8 +364,17 @@ class ZTransferUDPClient(object):
             except RRecvTimeout:
                 self.logger.debug(f"Timeout: Hit to RRecvTimeout")
 
-                self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
-                state = self.STATE_RAPID_SEND
+                if self._acks_got_up_to_timeout == 0:
+                    self._server_disconnect_ctr += 1
+                else:
+                    self._server_disconnect_ctr = 0
+
+                if self._server_disconnect_ctr >= MAX_RESENDS_BEFORE_TIMEOUT:
+                    # Server is probably down.
+                    state = self.STATE_FIN
+                else:
+                    self.to_send_seqs = self.all_data_seqs - self.acked_packet_seqs
+                    state = self.STATE_RAPID_SEND
             except Exception as e:
                 self.logger.critical(f"UNEXPECTED: {e}")
                 self.clear()

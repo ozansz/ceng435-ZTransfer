@@ -10,6 +10,7 @@ SCRIPT_DIR = os.path.dirname(
 sys.path.append(os.path.normpath(
     os.path.join(SCRIPT_DIR, PACKAGE_PARENT, PACKAGE_PARENT)))
 
+from src.config import get_config
 from src.utils import get_logger, calc_sha3_512_checksum
 from src.ztransfer.profiler import Profiler
 from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
@@ -19,6 +20,9 @@ from src.ztransfer.packets import (ZTConnReqPacket, ZTDataPacket,
 from src.ztransfer.errors import (ZTVerificationError, ERR_VERSION_MISMATCH,
                                   ERR_ZTDATA_CHECKSUM, ERR_MAGIC_MISMATCH,
                                   ERR_PTYPE_DNE)
+
+config = get_config()
+FIN_SEQ_PACKETS = config["udp"]["server"].get("finish_seq_packets", 5)
 
 DATA_SEQ_FIRST = 1
 
@@ -122,7 +126,11 @@ class ZTransferUDPServer(object):
                     self.client_addr = client_addr
 
                     ack_packet = ZTAcknowledgementPacket(curr_seq_number, packet.sequence_number)
-                    self.socket.sendto(ack_packet.serialize(), self.client_addr)
+                    
+                    try:
+                        self.socket.sendto(ack_packet.serialize(), self.client_addr)
+                    except Exception as e:
+                        self.logger.warning(f"Error occured while self.socket.sendto() in state STATE_WAIT_CCREQ: {e}")
 
                     self.logger.debug(f"Sent ACK to CREQ to server {self.client_addr}")
 
@@ -188,7 +196,11 @@ class ZTransferUDPServer(object):
                         self.logger.debug(f"Data packet has seq out of ranges: {packet.sequence_number}, dropped.")
                 elif isinstance(packet, ZTConnReqPacket):
                     ack_packet = ZTAcknowledgementPacket(curr_seq_number, packet.sequence_number)
-                    self.socket.sendto(ack_packet.serialize(), self.client_addr)
+
+                    try:
+                        self.socket.sendto(ack_packet.serialize(), self.client_addr)
+                    except Exception as e:
+                        self.logger.warning(f"Error occured while self.socket.sendto() in state STATE_TRANSFER: {e}")
 
                     curr_seq_number += 1
                 #elif isinstance(packet, ZTFinishPacket):
@@ -200,6 +212,12 @@ class ZTransferUDPServer(object):
                     self.logger.critical(f"File checksum mismatch!")
                 else:
                     self.logger.debug(f"File checksum OK")
+
+                for _ in range(FIN_SEQ_PACKETS):
+                    try:
+                        self.socket.sendto(ZTFinishPacket(curr_seq_number).serialize(), self.client_addr)
+                    except Exception as e:
+                        self.logger.warning(f"Error occured while self.socket.sendto() in state STATE_FIN: {e}")
 
                 self.clear()
                 break
