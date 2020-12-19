@@ -97,7 +97,11 @@ class ZTransferTCPClient(object):
             elif state == self.STATE_WAIT_ACK:
                 self.logger.debug(f"State: WAIT_ACK")
 
-                recv_data = self.socket.recv(1000)
+                recv_data = b""
+
+                while len(recv_data) < 1000:
+                    recv_data += self.socket.recv(1000 - len(recv_data))
+
                 self.logger.debug(f"Received {len(recv_data)} bytes from the server")
 
                 try:

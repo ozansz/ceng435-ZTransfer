@@ -72,7 +72,10 @@ class ZTransferTCPServer(object):
 
                 state = self.STATE_WAIT_CCREQ
             elif state == self.STATE_WAIT_CCREQ:
-                recv_data = self.client_socket.recv(1000)
+                recv_data = b""
+
+                while len(recv_data) < 1000:
+                    recv_data += self.client_socket.recv(1000 - len(recv_data))
 
                 self.logger.debug(f"Received {len(recv_data)} bytes from the client")
 
@@ -112,7 +115,10 @@ class ZTransferTCPServer(object):
 
                 state = self.STATE_TRANSFER
             elif state == self.STATE_TRANSFER:
-                recv_data = self.client_socket.recv(1000)
+                recv_data = b""
+
+                while len(recv_data) < 1000:
+                    recv_data += self.client_socket.recv(1000 - len(recv_data))
 
                 self.logger.debug(f"Received {len(recv_data)} bytes from the client")
 
